@@ -11,12 +11,14 @@ class Particle_Tracking_Training_Data(tf.Module):
             for j in np.arange(self.Nx)]
         self.ximg = np.float32(ximg)
 
+        ## By default, 256x256 and coordinates are -128 to 127
         x = np.arange(self.Nx) - self.Nx//2
         y = np.arange(self.Ny) - self.Ny//2
         X0, Y0 = np.meshgrid(x, y)
         self.X = np.float32(X0)
         self.Y = np.float32(Y0)
 
+        ## ring_indicator indicates if "rings" should be shown
         if rings:
             self.ring_indicator = 1.
         else:
@@ -78,7 +80,7 @@ class Particle_Tracking_Training_Data(tf.Module):
             [-10, -10, -30.], tf.float32)
         b_upper = tf.constant(
             [self.Nx+10, self.Ny+10, 30.], tf.float32)
-        #### uniform random initial possitions
+        #### uniform random initial positions
         U = tf.random.uniform(
             [1, Nparticles, self.d],
             dtype=tf.float32)
