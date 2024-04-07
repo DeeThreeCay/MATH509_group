@@ -102,7 +102,7 @@ class Particle_Tracking_Training_Data(tf.Module):
     def _gen_video(self, r, z, kappa, a, IbackLevel):
         uw = (0.5 + self.rand(1))/2.
         un = tf.floor(3*self.rand(1))
-        uampRing = 0.2 + 0.8*self.rand(1)
+        uampRing = 0.2 + 0.8*self.rand(1)   
         ufade = 15 + 10*self.rand(1)
         rmax = ufade*(un/uw)**(2./3.)
         ufadeMax = 0.85
@@ -123,6 +123,8 @@ class Particle_Tracking_Training_Data(tf.Module):
             [self.Nt, self.Ny, self.Nx],
             stddev=kappa,
             dtype=tf.float32)
+        
+        ## Find minimum & maximum values, and scale down.
         Imin = tf.reduce_min(I)
         Imax = tf.reduce_max(I)
         I = (I - Imin)/(Imax - Imin)
