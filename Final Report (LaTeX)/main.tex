@@ -1,0 +1,237 @@
+\documentclass[11pt,a4paper]{scrartcl}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage[onehalfspacing]{setspace}
+\usepackage{graphicx}
+\usepackage[breaklinks=true,colorlinks=true,linkcolor=blue,urlcolor=blue,citecolor=blue]{hyperref}
+\usepackage{amsmath,amsthm,amssymb}
+\usepackage{icomma}
+\usepackage[english]{babel}
+\usepackage[T1]{fontenc}
+\usepackage[space-before-unit=true,per-mode = symbol]{siunitx}
+\usepackage{booktabs,multirow}
+\usepackage{placeins}
+\usepackage[natbib,abbreviate=true,doi=false,style=numeric-comp,giveninits=true,sorting=none]{biblatex}
+\usepackage{csquotes} 
+\addbibresource{MyBibliography.bib} 
+
+\graphicspath{{Bilder/}}
+
+\DeclareSIUnit{\dBm}{dBm}
+\DeclareSIUnit[per-mode=reciprocal]\WN{\per\centi\meter}
+
+\setlength{\parindent}{0pt}
+
+\begin{document}
+%
+\title{Particle Detection in microscopy videos based on CNN}
+\author{Jialin He, Yuanzhe Zhang, Dennis Kwong}
+\date{\today}
+\maketitle
+\renewcommand\abstractname{Abstract}
+\section*{\abstractname}
+This is the final report for our MATH 509 group project. When given a microscopic video, true particles appear white while empty spaces appear black. Through thresholding in OpenCV, it is possible to roughly locate the locations of the particles. However, such approach does not suffice due to varying particle size, the existence of ``false'' particles, and does not give insights on particle movement tracking. Our group have thus used a machine learning approach - CNN to deal with the task, in addition to some other code snippets that could deal with the above issues.
+
+\thispagestyle{empty}
+\tableofcontents
+\thispagestyle{empty}
+\cleardoublepage
+\pagenumbering{arabic} 
+\newpage
+
+
+%% SECTION 1 %%
+\section{Introduction}
+With better technology, microscope has higher magnifications and thus are able to record the movement of microscopic-sized particles. However, even with highly advanced microscopes, the issue of poor signal-to-noise ratios (i.e. high noise) could not be alleviated. Moreover, how to post-process microscopic videos and output the positions of particles on screen remains a hot topic in the machine learning and applied science community.\\
+
+Our project is divided into two parts. First, before analyzing any microscopic videos, we have to find ways to turn mp4 videos into an array of data. This is done by OpenCV. In addition, after extracting the videos, we have attempted to perform basic analysis on the videos (i.e. part of Project Salmonella).\\
+
+Second, we have generated training data via a python class. Since there are only limited number of microscope recordings, it is not realistic to train the neural network with those recordings. The python class generates video that roughly resembles a microscopic recording, with parameters including noise level, standard deviation of Brownian motion and particle size. The training data is then fed to train the CNN, which will later be used for particle detection (i.e. part of Project NeuralNet).
+
+
+%% SECTION 2 %%
+\section{Data processing}
+
+In Project NeuralNet, no data was provided. In Project Salmonella, two types of data - tracks and videos were given. `Videos' data are mp4 videos captured by a microscope. The videos are 10 seconds long. `Tracks' data are csv files containing the $(x,y)$ coordinates of each particle in the videos at frame $t \in \{0,1,\dots, 159\}$.
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{ccccc}
+\toprule
+\multicolumn{1}{c}{particle} & \multicolumn{1}{c}{$x$} & \multicolumn{1}{c}{$y$}	& \multicolumn{1}{c}{frame $t$} \\
+\midrule
+0 & 427.158 & 69.356 & 0 \\
+0 & 427.128 & 69.407 & 1 \\
+0 & 427.823 & 69.605 & 2 \\
+$\vdots$ & $\vdots$ & $\vdots$ & $\vdots$ \\
+\bottomrule
+\end{tabular}
+\caption{Data structure of `Tracks' dataset}
+\end{table}
+
+
+%% SECTION 2.1 %%
+\subsection{OpenCV: A thresholding approach \& limitations}
+Code for this part can be found in \url{Project NeuralNet/opencv_experiment.ipynb}.\\
+
+Microscopy videos are stored in mp4 format, in which its pixel data could be translated and stored in an array by the help of OpenCV. By the \textit{cvtColor} method, a colorized video is turned interpreted as a grayscale video, and then converted into a matrix of values ranging from 0 to 255, representing each pixel's light intensity (0 being black, 255 being white). \\
+
+OpenCV also provides a \textit{threshold} method. It stores all pixels with white intensity higher than the threshold to be 1, and others to be 0. 
+
+$$\text{output pixel value} = \begin{cases}
+    1 & \text{if pixel intensity} \geq \text{threshold}\\  
+    0 & \text{if pixel intensity} < \text{threshold}
+\end{cases}$$
+
+Intuitively, in the video, particles appear white while empty space appears black. So upon setting a proper threshold, it is theoretically possible to detect which part of the image corresponds to particles, while which part is not. Upon testing this idea on a microscopic video, a major issue could be spotted.
+
+\begin{figure}[h]
+    \begin{center}
+        \includegraphics[width = 0.8\textwidth]{img/data200_t0.png}
+    \end{center}
+    \caption{Frame $t = 0$, Threshold $= 200$}
+\end{figure}
+
+The above shows the problem of over-filtering. Setting the threshold too high eliminates potential white spots, which could represent particles.
+
+\begin{figure}[h]
+    \begin{center}
+        \includegraphics[width = 0.8\textwidth]{img/data120_t135.png}
+    \end{center}
+    \caption{Frame $t = 135$, Threshold $= 120$}
+\end{figure}
+ 
+On the other hand, setting the threshold too low would cause the map to be ``contaminated'' by noise. In frames with very high noise, the noise exceeds the threshold value, and thus gets a value of 1 in the map. This experiment gives us insights on why more advanced tools, such as neural networks, should be used instead.
+
+
+%% SECTION 2.2 %%
+\subsection{Interpretation of videos}
+Code for this part can be found in \url{Project Salmonella/Project Salmonella.ipynb}, Goal 1.\\
+
+We were provided with 27 recorded videos in Project Salmonella. Before diving into the Neural Network part of this project, we tried to get some intuitions as to how to analyze particle paths. With the given data, we are able to estimate the average speed of the particles. Although this is not directly related to the CNN part of the project, we figured it would be helpful to think of particle tracking in a particle velocity point of view. This could be a potential direction for future discoveries.\\
+
+The first method of estimating particle velocity is to simply take the mean of the velocities in each subsequent frames. It was given that $dx = dy = 0.156 \mu m$, suppose the particle moved for $(x,y)$ pixels for each direction between two frames, we would have distance travelled $d$ to be 
+$$d = \sqrt{(x\cdot dx)^2 + (y\cdot dx)^2}$$
+
+We take the mean of all distance travelled between frames, divided by $dt = 0.0667$ to get an estimated swim speed of $7.22 \mu m/s$.
+
+
+%% SECTION 3 %%
+\section{Mathematical Model}
+
+%% SECTION 3.1 %%
+\subsection{Generating Training Data}
+To apply the CNN model for particle detection, we will be using a Python class to generate training data. Without prior knowledge of the way the particles move, it is assumed that particles move in a random Brownian motion. Besides, to simulate the background noises in the microscopic videos, a standard deviation parameter of background noise is added to control the strength of the noise.\\
+
+To reduce the trouble of not knowing how many particles are on the screen, a parameter `Nparticles' is used to define the number of particles. Each particle have different sizes and $z$-value, which sometimes cause there to be a ring surrounding the particle. This can also be adjusted. (see Table 2)
+
+\begin{table}[h]
+\centering
+\begin{tabular}{cc}
+\toprule
+\textbf{Variable} & \textbf{Description}  \\
+\midrule
+Nt & Number of frames (video) \\
+a & Spot radius scale factor (1.5-4) \\
+kappa & Noise level (0.1) \\
+Nparticles & Number of particles in the video \\
+Ibacklevel & Intensity level of the random background relative to maximum (0-1) \\
+sigma\_motion & Standard deviation of random Brownian motion per video frame \\
+\bottomrule
+\end{tabular}
+\caption{Input parameters}
+\end{table}
+\newpage
+
+The method `\_sample\_motion' specifies how the Brownian motion works. 
+
+\begin{enumerate}
+    \item Define the lower and upper boundaries of meshgrid: 
+    $$b_{\text{lower}} = [-10, -10, -30], b_{\text{upper}} = [Nx + 10, Ny + 10, 30]$$
+    \item Initial positions determined by uniform distribution $U(0,1)$: $X_0 = b_{\text{lower}} + (b_{\text{upper}} - b_{\text{lower}}) \times U$ for all 3 coordinates.
+    \item Normal distribution with s.d. $\sigma_{\text{motion}}$ is used to determine $dX$, which is the normal increment changes in particle positions.
+    \item With different $dX$ per iteration in step 3, $X$ would store the final position, which is obtained after an unbounded Brownian motion has been performed.
+    \item Reflected Brownian Motion: If the particle goes outside of the boundary, it is reflected back into the defined lower and upper bounds by
+    $$X = |X - b_{\text{lower}}| + b_{\text{lower}} \text{ and } X = |b_{\text{upper}} - X| + b_{\text{upper}}$$
+\end{enumerate}
+
+%% SECTION 3.2 %%
+\subsection{CNN layers}
+
+Code for this part can be found in \url{Project NeuralNet/Training_Data/finalized_code.ipynb}.\\
+
+Neural networks are mathematical models that mimics how biological neural networks, such as the human brain works. A particular subclass of Neural Network, Convolutional Neural Network (CNN), was chosen due to its popularity and ability for downsampling, feature extraction and classification.\\
+
+The CNN architecture we have chosen mainly relies on 3 types of layers: Convolutional layer, Pooling layer and Fully Connected layer.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{ccc}
+\toprule
+\textbf{Layer (type)} & \textbf{Output Shape} & \textbf{Param \#} \\
+\midrule
+conv2D & (256, 256, 32) & 320 \\
+MaxPooling2D & (128, 128, 32) & 0 \\
+conv2D & (128, 128, 64) & 18,496 \\
+conv2D & (256, 256, 32) & 1,154 \\
+dense & (128, 128, 128) & 384 \\
+dense & (128, 128, 2) & 258 \\
+\bottomrule
+\end{tabular}
+\caption{Layers of CNN}
+\end{table}
+\newpage
+
+\subsubsection{Convolutional Layer}
+Convolutional layer is the bread-and-butter layer for any CNN architectures. Its purpose is to perform feature extraction and localization. In each frame, an image of $256 \times 256$ is fed into the network. It would take too many hidden parameters to do a dense layer directly from the bitmap image, since the complexity is unreasonably high. Besides, there is not much disadvantageous by using a `blurred' image. In our attempts, we used multiple convolutional layers, and each of them has a size $3\times 3$ filters. 
+
+\subsubsection{Pooling Layer}
+We added a $2\times 2$ max pooling layer to compress the size of frame from $256 \times 256$ to $128 \times 128$. A max pooling layer simply picks the largest value within a $2\times 2$ grid as the new output. We expect the largest values picked would retain the most prominent output, and thus would not result in major data loss. It also has a `stride' parameter which specifies the offset of squares to be picked.
+
+\subsubsection{Fully Connected Layer}
+Fully connected layers are added at the end of the architecture. It is used mainly for classification and output. We have used ReLU function and Softmax function for the last two dense layers respectively.
+
+
+%% Section 4 - TODO
+\section{Solution of the problem}
+Outline of the mathematical methods used to solve the model. Details such as complicated computations or numerical code should be provided in appendices.
+
+
+%% Section 5 - TODO
+\section{Results interpretation}
+Answer the questions posed in the introduction, summarize major findings. Use non-technical terms.
+
+
+%% Section 6 - TODO
+\section{Critique of the model}
+
+% start here
+Does the model satisfactorily answer the questions posed? Discuss the limitations of the model
+
+\subsection{Future developments}
+We have actually tried another Neural Network architecture. Instead of just CNN and dense layers, it makes sense to use some sort of Recurrent neural network (RNN), such as Long-Short Term Memory (LSTM). RNN is widely used for processing sequential data, and the video we are working with just happens to be a sequence of bitmaps. LSTM in particular excels in capturing long-term dependencies, maintaining long-term memory while able to selectively forget information over time as well.\\
+
+In our first attempt, we added a bidirectional LSTM layer to the neural network. The output did not turn out to be valid, could be because of reshaping issues, but we are certain that more could be done in this direction.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{ccc}
+\toprule
+\textbf{Layer (type)} & \textbf{Output Shape} & \textbf{Param \#} \\
+\midrule
+conv2D & (256, 256, 32) & 320 \\
+MaxPooling2D & (128, 128, 32) & 0 \\
+conv2D & (128, 128, 64) & 18,496 \\
+TimeDistributed & (128, 8192) & 0 \\
+Bidirectional & (128, 128) & 4,227,584 \\
+dense & (128, 128) & 16512 \\
+dense & (128, 128) & 16512 \\
+\bottomrule
+\end{tabular}
+\caption{Layers of CNN}
+\end{table}
+
+\printbibliography[]
+\vfill
+
+
+\end{document}
