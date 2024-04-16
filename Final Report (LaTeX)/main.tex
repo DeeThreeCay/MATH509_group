@@ -12,6 +12,7 @@
 \usepackage{placeins}
 \usepackage[natbib,abbreviate=true,doi=false,style=numeric-comp,giveninits=true,sorting=none]{biblatex}
 \usepackage{csquotes} 
+\usepackage{float}
 \addbibresource{MyBibliography.bib} 
 
 \graphicspath{{Bilder/}}
@@ -222,7 +223,7 @@ Final accuracy & 0.9967  \\
 
 %% SECTION 4.2.1 %%
 \subsubsection{Filtering processing for CNN output}
-The output of our CNN model is a 2-dimensional image of probabilities. However, the point of interest are the potential locations of particles. Thus, to determine which area of the bitmap we are interested in, we naturally think about filtering. This is because after CNN processing, the bitmap has a high difference between the bright points and the dark spots (empty space). \\
+The output of our CNN model is a 2-dimensional image of probabilities. However, the point of interest are the potential locations of particles. Thus, to determine which area of the bitmap we are interested in, we naturally think about filtering. This is because after CNN processing, the bitmap has a high difference in brightness value between the bright points and the dark spots (empty space). \\
 
 Notice that although we are using thresholding as well (which was mentioned to be incapable of handling noise and weak signals), our thresholding is not done on the original video frames, but on the output of the CNN model. \\ %%image of output
 
@@ -248,15 +249,18 @@ From the previous filtering step, we have simplified a bitmap of probabilities t
 The reason for the excess amount of 1s is because of the size of particles. A particle need not be exactly 1 pixel large. Therefore, we have to find some features and get an idea of how to determine what "isolated patches" and "center of patches" are.
 
 \begin{itemize}
-    \item \textbf{Feature 1(non-connection)}: A particle position represent the center of an area of points with label '1', so there is no '1's next to it.
-    \item \textbf{Feature 2 (Neighbours)}: Denote the set of particle positions to be 'A', for a constant distance 'L' we set as a parameter, for any two element 'x' and 'y' belongs to 'A', Dis(x,y)>=L.
-\end{itemize} % reword required
+    \item \textbf{Feature 1 (Isolated points)}: Suppose the current pixel $i$ has label `1', it is isolated if there are no other pixels of label '1's next to it.
+    
+    \item \textbf{Feature 2 (Neighbours)}: 2 points $x,y$ are neighbours if $\text{dist}(x,y) < r$, where $r$ is a predefined radius value.
 
-If we could remove all connected points and neighbourhoods, this could greatly reduce the list of potential particles.
+    \item \textbf{Feature 3 (path-connected points)}: 2 points $x,y$ are path-connected if there exists a path of pixels, all with label `1', connecting the 2 points.
+\end{itemize}
+
+If we could remove all path-connected points and neighbourhoods, this could greatly reduce the list of potential particles (optimally 10 so that it matches the given data).
 
 %% SECTION 4.2.3 %%
-\subsubsection{Selection of half-isolated points (Removing Connected Points)}
-In this subsection, we explain our algorithm to remove \textit{connected points} first.\\
+\subsubsection{Selection of half-isolated points (Removing Path-connected Points)}
+In this subsection, we explain our algorithm to remove \textit{path-connected points} first.\\
 
 \textbf{Initial Algorithm:}
 \begin{enumerate}
@@ -284,7 +288,16 @@ Therefore, we will modify part of the iteration part. We will be searching \text
         \item if $\text{particle} = []$, append $i$ into it. 
         \item otherwise, Within the \textbf{2 boundary paths} from $i$ to $j$, if there exists a 0 in both paths, then append $i$ to the list.
     \end{itemize}
-\end{enumerate}
+\end{enumerate}\\
+
+\begin{figure}[h]
+    \begin{center}
+        \includegraphics[width = 0.45\textwidth]{img/illustration_allPaths.png}
+        \includegraphics[width = 0.45\textwidth]{img/illustration_boundary.png}
+        \caption{Original Algorithm: search along all paths (left) and \\
+        Updated algorithm: Search along the boundary (right)}
+    \end{center}
+\end{figure}
 
 This method neglects some of the connected points, but will be effective in filtering some of them out. The complexity would definitely be $O(n^2)$, while the previous could be way over $O(n^3)$ due to the path-finding part.
 
@@ -310,53 +323,128 @@ After this step, all neighbouring particles would been filtered out, with points
 %% Section 5 %%
 \section{Results interpretation}
 
-%% Section 5.1 %%
-\subsection{Effect display} %% IMAGES NEEDED, NOT DONE
+%% Section 5.1 %% 
+\subsection{Effect display}
 
-First, we take one set of generated tracks as our sample to show the effect of our steps described above: \\
+%1. Passing to CNN
+First, we take one set of generated tracks as our sample to show the result of the described algorithm. We first pass the input image to the CNN to get an output.
 
-%%1.input
+\begin{figure}[h]
+    \begin{center}
+        \includegraphics[width = 0.43\textwidth]{img/input_vid}
+        \includegraphics[width = 0.4\textwidth]{img/cnn_output}
+    \end{center}
+    \caption{Input image (left), CNN model output (right)}
+\end{figure} 
 
-%%2.cnn output
-Although we can see from the output image that the recognition is not that perfect with small noises, the points around particle positions have been given high probabilities, which means our model is effective.
+The red crosses in the image represent the positions of 10 simulated particles. The CNN output has a more yellowish color near the red crosses, which means the probability values assigned are high. This shows that the CNN is effective in  capturing the potential particle positions. \\
 
+%2. Thresholding
+Second, we normalize the probabilities, and use a $0.7$ threshold to produce a $0,1$-bitmap. This simplifies the image. \\
 
-%%3. filtering
+After thresholding, the points with high probabilities are mostly kept. However, you would also notice that some circles around the center of the particle remains (figure 5, left). Those are not new particles but indeed part of a particle that spans more than 1 pixel.
 
-We can see that after the filtering, the points with high probabilities( yellow points in the last picture) has been kept mostly. What is not perfect is that the light circles around the particle some times were also kept, which require us to increase the accuracy of our model by improving the NN structure or training steps.
-%%4.DFS
+\begin{figure}[H]
+    \begin{center}
+        \includegraphics[width = 0.4\textwidth]{img/booler.png}
+        \includegraphics[width = 0.4\textwidth]{img/after_dfs}
+    \end{center}
+    \caption{Image after $0.7$ threshold (left), Half-isolated points (right)}
+\end{figure}
 
-After the enumeration of connected points we finally keep all the half-isolated points, from the image we can conclude that for small and convex-shaped label'1' points groups, only one particle position for each group was kept, which is effective. However, for large-size and complex-shaped group of points, some extra points have been left, which is the necessary sacrifice for saving the complexity of our algorithm.
-%%5.distance filtering
+%3. Path Searching
+We enumerate all pairs of points, and keep the half-isolated points only (figure 5, right). Some of the neighbourhood points remains due to the pairs being path-disconnected, but it reduces the number of points in the set with low complexity. For a high number of frames to process, this is a sacrifice we need to take to reduce the complexity of our algorithm.
 
-We can see from the red crosses on the image that each particle position has been corresponded with each red cross very well. And for this sample our whole detection method has show 100 percent accuracy.
+%%4. distance filtering
+\begin{figure}[H]
+    \begin{center}
+        \includegraphics[width = 0.5\textwidth]{img/dis_filter}
+    \end{center}
+    \caption{Finalized Particles after distance filtering}
+\end{figure}
 
+Finally, we use distance filtering to get rid of neighbourhood points. The red crosses in the image corresponds to the deduced particle locations, which visually looks quite accurate. However, we do need some proper validation metrics to make persuasive claims that the model is accurate.
 
+%% Section 5.2 %% 
+\subsection{Validation Score} 
+We use an F1-score system to evaluate our model. Calculating F1-score requires us to first accumulate a count of True Positives, True Negatives, False Positives and False Negatives. We denote these values by TP, TN, FP, FN.
 
-\subsection{Validation Score}
-We use F1-score system to evaluate our model. First, we need to calculate four coordinates: tt,tf,ft,ff.\\
-tt: samples with label 'True' and was recognized as 'True';\\
-tf: samples with label 'True' and was recognized as 'False';\\
-ft: samples with label 'False' and was recognized as 'True';\\
-ff: samples with label 'False' and was recognized as 'False';\\
+\begin{itemize}
+    \item \textbf{TP}: Label `True', recognized as `True'
+    \item \textbf{FP}: Label `False', recognized as `True'
+    \item \textbf{FN}: Label `True', recognized as `False'
+    \item \textbf{TN}: Label `False', recognized as `False' 
+\end{itemize}
 
-Obviously, tt and ff are what we hope to occupy the higher ratio while tf and ft are what we hope to occupy the lower ratio.\\
+We want TP and TN to be high, while FP and FN to be minimal. Using the 4 values, we could then obtain 3 important metrics: True positive rate (TPR), False positive rate (FPR) and Accuracy.
 
-By combining these four coordinates, we can make three types of scores: TPR,FPR and Accuracy.
+\begin{itemize}
+    \item $\text{TPR} = \frac{\text{TP}}{\text{TP} + \text{FN}}$
+    \item $\text{FPR} = \frac{\text{FP}}{\text{FP} + \text{TN}}$
+    \item $\text{Acc} = \frac{\text{TP} + \text{TN}}{\text{TP} + \text{TN} + \text{FP} + \text{FN}}$
+\end{itemize}
+
+We have fed our model with a test set, and got the following metric:
+
+\begin{table}[h]
+    \centering
+    \begin{tabular}{cc}
+        \toprule
+        \textbf{Score} & \textbf{Value}  \\
+        \midrule
+        TPR &0.9188 \\
+        FPR & 0.0609 \\
+        Acc & 0.8580\\
+        \bottomrule
+    \end{tabular}
+    \caption{Validation Score}
+\end{table}
+
+The metrics has shown that our detection algorithm did a decent job.
 \newpage
 
-%% Section 6 - TODO
+%% Section 6
 \section{Critique of the model}
 
+%% Section 6.1: TO-DO!
 \subsection{About Goal 3}
-We have similar issues with another group - not being able to get something useful in Goal 3.
+We have similar issues with another group - not being able to get something useful in Goal 3. We will discuss some difficulties when dealing with goal 3.
 
+\begin{center}
+    \textbf{Goal 3}: Given a video and particle positions (from the training data generator)\\
+    develop a neural network to estimate the $z$-position of each particle
+\end{center}
+
+In the video, it is easy to interpret what the $(x,y)$-coordinates of the particles are. Wherever the white spots are, those are the potential particle locations. $z$-coordinates on the other hand are not easy to interpret. From speculation, it is possible that the \textit{size of the ring} around the particle and \textit{particle size} could relate to the corresponding $z$-position. \\
+
+If such speculation holds true, then there would be difficulties defining the convolution layers. In our model, we have used conv2D layers with $3\times 3$ filters. If we increase the filter size, we might accidentally removed `rings around particle' due to averaging. If we decrease the filter size, we are no longer doing CNN. \\
+
+Therefore, we tried to simply define a neural network with plenty of dense layers, but the output was strange. 
+
+\begin{table}[h]
+\centering
+\begin{tabular}{ccc}
+\toprule
+\textbf{Layer (type)} & \textbf{Output Shape} & \textbf{Param \#} \\
+\midrule
+    input & (10,3) & / \\
+    dense & (10,128) & 512 \\
+    flatten & (1280) & 0 \\
+    dense & (128) & 163968 \\
+    dense & (64) & 8256 \\
+    dense & (1) & 65 \\
+\bottomrule
+\end{tabular}
+\caption{Goal 3 trial}
+\end{table}
+
+%% Section 6.2
 \subsection{Future developments}
 We have actually tried another Neural Network architecture. Instead of just CNN and dense layers, it makes sense to use some sort of Recurrent neural network (RNN), such as Long-Short Term Memory (LSTM). RNN is widely used for processing sequential data, and the video we are working with just happens to be a sequence of bitmaps. LSTM in particular excels in capturing long-term dependencies, maintaining long-term memory while able to selectively forget information over time as well.\\
 
 In our first attempt, we added a bidirectional LSTM layer to the neural network. The output did not turn out to be valid, could be because of reshaping issues, but we are certain that more could be done in this direction.
 
-\begin{table}[h]
+\begin{table}[H]
 \centering
 \begin{tabular}{ccc}
 \toprule
@@ -374,8 +462,10 @@ dense & (128, 128) & 16512 \\
 \caption{Layers of CNN}
 \end{table}
 
-\printbibliography[]
-\vfill
+\section*{Bibliography}
+Newby, J. M., Schaefer, A., Lee, P. T., M. Gregory Forest, \& Lai, S. K. (2018). Convolutional neural networks automate detection for tracking of submicron-scale particles in 2D and 3D. 115(36), 9026–9031. Retrieved from \url{https://doi.org/10.1073/pnas.1804420115}\\
+CS231n Convolutional Neural Networks for Visual Recognition. (n.d.). Retrieved from \url{https://cs231n.github.io/}
 
+%\printbibliography[]
 
 \end{document}
