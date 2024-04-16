@@ -189,23 +189,167 @@ We added a $2\times 2$ max pooling layer to compress the size of frame from $256
 
 \subsubsection{Fully Connected Layer}
 Fully connected layers are added at the end of the architecture. It is used mainly for classification and output. We have used ReLU function and Softmax function for the last two dense layers respectively.
-
+\newpage
 
 %% Section 4 - TODO
 \section{Solution of the problem}
-Outline of the mathematical methods used to solve the model. Details such as complicated computations or numerical code should be provided in appendices.
+
+Code for this part can be found in \url{Project NeuralNet/Training_Data/finalized_code.ipynb}.\\
+
+To reiterate, we have chosen to use a CNN model to identify the positions of particles. Below states comprehensively how the CNN model is trained.
+
+%% SECTION 4.1 %%
+\subsection{Training of CNN-model}
+First, we constructed CNN model with the aforementioned architecture, then we use the \textit{model.fit} function in TensorFlow to train it. Here are the parameters for the training.
+\begin{table}[h]
+\centering
+\begin{tabular}{ccc}
+\toprule
+\textbf{Items} & \textbf{Choices}  \\
+\midrule
+Optimizer & Adam \\
+Loss function & Sparse categorical cross-entropy loss  \\
+Epoch & 50 \\
+Final loss & 0.0079  \\
+Final accuracy & 0.9967  \\
+\bottomrule
+\end{tabular}
+\caption{CNN Training Details}
+\end{table}
+
+%% SECTION 4.2 %%
+\subsection{Extraction of particle positions}
+
+%% SECTION 4.2.1 %%
+\subsubsection{Filtering processing for CNN output}
+The output of our CNN model is a 2-dimensional image of probabilities. However, the point of interest are the potential locations of particles. Thus, to determine which area of the bitmap we are interested in, we naturally think about filtering. This is because after CNN processing, the bitmap has a high difference between the bright points and the dark spots (empty space). \\
+
+Notice that although we are using thresholding as well (which was mentioned to be incapable of handling noise and weak signals), our thresholding is not done on the original video frames, but on the output of the CNN model. \\ %%image of output
+
+To make our filter more accurate, we first normalized the probability image. The highest probability within all pixels might not be 1, we would expect it to be somewhere around $0.9$. We would then use this probability to normalize the probability of every pixel such that it forces the highest probability in the bitmap to be $1$.
+
+$$\text{Normalized Probability} = \frac{\text{Pixel Probability}}{\text{Highest Probability in Bitmap}}$$
+
+Then, we will use a threshold function, where every points with probability greater than or equal to 0.7 will round up to a 1, and others regarded as 0. This results in a matrix with entries 0 and 1, allowing easier decision-making.\\
+
+$$M_{i,j} = \begin{cases}
+    1 & \text{if normalized probability of pixel }(i,j) \geq 0.7\\
+    0 & \text{else}
+\end{cases}$$
+
+The threshold value $0.7$ was a logical guess. For future projects, it could be an idea to use grid search to tune such hyperparameters. But for our purpose, $0.7$ had given high accuracy scores, and thus we would be using this value throughout the project.
+
+%% insert image of booler
+
+%% SECTION 4.2.2 %%
+\subsubsection{Selection of half-isolated points (Overview)}
+From the previous filtering step, we have simplified a bitmap of probabilities to a 0-1 bitmap. However, if we simply treat points with label 1 as particles, we would have had way more than 10 particles, which is the pre-defined number of particles on screen. \\
+
+The reason for the excess amount of 1s is because of the size of particles. A particle need not be exactly 1 pixel large. Therefore, we have to find some features and get an idea of how to determine what "isolated patches" and "center of patches" are.
+
+\begin{itemize}
+    \item \textbf{Feature 1(non-connection)}: A particle position represent the center of an area of points with label '1', so there is no '1's next to it.
+    \item \textbf{Feature 2 (Neighbours)}: Denote the set of particle positions to be 'A', for a constant distance 'L' we set as a parameter, for any two element 'x' and 'y' belongs to 'A', Dis(x,y)>=L.
+\end{itemize} % reword required
+
+If we could remove all connected points and neighbourhoods, this could greatly reduce the list of potential particles.
+
+%% SECTION 4.2.3 %%
+\subsubsection{Selection of half-isolated points (Removing Connected Points)}
+In this subsection, we explain our algorithm to remove \textit{connected points} first.\\
+
+\textbf{Initial Algorithm:}
+\begin{enumerate}
+    \item Set list $\text{particle} = []$
+    \item Enumerate all pairs of points labelled 1, denoted as $i, j$:
+    \begin{itemize}
+        \item if $\text{particle} = []$, append $i$ into it. 
+        \item otherwise, between path of $i, j$, if there exists a 0 in all paths (i.e. $i, j$ are isolated points), then append $i$ to the list.
+    \end{itemize}
+\end{enumerate}
+
+In short, we try to identify points that are isolated, and then ignore points that are connected to points in the \textit{particle} array. This process reduces local patches into a singular point.\\
+
+The algorithm certainly makes sense, but the complexity is very high. To iterate between pairs of points is $O(n^2)$, but to iterate all paths between them would further increase the complexity. For example, imagine a $3\times 3$ rectangle where point $i, j$ are at two opposite corners, then imagine a $15\times 15$ rectangle with similar setting. The number of paths between $i$ and $j$ increases geometrically. \\
+
+Therefore, we will modify part of the iteration part. We will be searching \textit{along the boundary of the rectangle} between $i$ and $j$ to reduce to 2 routes from $i$ to $j$. If 0 exists in any of the paths, they are half-isolated (for now, which will be further filtered in the next step). \\
+
+\textbf{Definition (set of half-isolated points)}: A set $A$ stores half-isolated points if for any two points $i \neq j \in A$, draw a rectangle between them (or a straight line if they have identical $x$ or $y$ values), and there exists a 0-indexed point in both paths. \\
+
+\textbf{Updated Algorithm:}
+\begin{enumerate}
+    \item Set list $\text{particle} = []$
+    \item Enumerate all pairs of points labelled 1, denoted as $i, j$:
+    \begin{itemize}
+        \item if $\text{particle} = []$, append $i$ into it. 
+        \item otherwise, Within the \textbf{2 boundary paths} from $i$ to $j$, if there exists a 0 in both paths, then append $i$ to the list.
+    \end{itemize}
+\end{enumerate}
+
+This method neglects some of the connected points, but will be effective in filtering some of them out. The complexity would definitely be $O(n^2)$, while the previous could be way over $O(n^3)$ due to the path-finding part.
+
+%% SECTION 4.2.4 %%
+\subsubsection{Selection of isolated points (Neighbourhoods)}
+
+This part is quite intuitive. We will be filtering points according to the Manhattan distance. We have a set a filtering radius $r = 10$, which means points that are at most 10-pixels away from each other will be removed.
+
+\begin{enumerate}
+    \item Set radius $r = 10$.
+    \item Enumerate for each point $i$ in the half-isolated list of points $A$.
+    \begin{itemize}
+        \item Pick another point $j$ (which was not chosen as $i$ before).
+        \item If $\text{dist}(i,j) < 10$, remove point $j$.
+    \end{itemize}
+\end{enumerate}
+where the distance function is just:
+$$\text{dist}(i,j) = \left| i_x - j_x \right| + \left| i_y - j_y \right|$$
+
+After this step, all neighbouring particles would been filtered out, with points remaining in the list representing a representative coordinate for the whole patch of white spots.
 
 
-%% Section 5 - TODO
+%% Section 5 %%
 \section{Results interpretation}
-Answer the questions posed in the introduction, summarize major findings. Use non-technical terms.
 
+%% Section 5.1 %%
+\subsection{Effect display} %% IMAGES NEEDED, NOT DONE
+
+First, we take one set of generated tracks as our sample to show the effect of our steps described above: \\
+
+%%1.input
+
+%%2.cnn output
+Although we can see from the output image that the recognition is not that perfect with small noises, the points around particle positions have been given high probabilities, which means our model is effective.
+
+
+%%3. filtering
+
+We can see that after the filtering, the points with high probabilities( yellow points in the last picture) has been kept mostly. What is not perfect is that the light circles around the particle some times were also kept, which require us to increase the accuracy of our model by improving the NN structure or training steps.
+%%4.DFS
+
+After the enumeration of connected points we finally keep all the half-isolated points, from the image we can conclude that for small and convex-shaped label'1' points groups, only one particle position for each group was kept, which is effective. However, for large-size and complex-shaped group of points, some extra points have been left, which is the necessary sacrifice for saving the complexity of our algorithm.
+%%5.distance filtering
+
+We can see from the red crosses on the image that each particle position has been corresponded with each red cross very well. And for this sample our whole detection method has show 100 percent accuracy.
+
+
+
+\subsection{Validation Score}
+We use F1-score system to evaluate our model. First, we need to calculate four coordinates: tt,tf,ft,ff.\\
+tt: samples with label 'True' and was recognized as 'True';\\
+tf: samples with label 'True' and was recognized as 'False';\\
+ft: samples with label 'False' and was recognized as 'True';\\
+ff: samples with label 'False' and was recognized as 'False';\\
+
+Obviously, tt and ff are what we hope to occupy the higher ratio while tf and ft are what we hope to occupy the lower ratio.\\
+
+By combining these four coordinates, we can make three types of scores: TPR,FPR and Accuracy.
+\newpage
 
 %% Section 6 - TODO
 \section{Critique of the model}
 
-% start here
-Does the model satisfactorily answer the questions posed? Discuss the limitations of the model
+\subsection{About Goal 3}
+We have similar issues with another group - not being able to get something useful in Goal 3.
 
 \subsection{Future developments}
 We have actually tried another Neural Network architecture. Instead of just CNN and dense layers, it makes sense to use some sort of Recurrent neural network (RNN), such as Long-Short Term Memory (LSTM). RNN is widely used for processing sequential data, and the video we are working with just happens to be a sequence of bitmaps. LSTM in particular excels in capturing long-term dependencies, maintaining long-term memory while able to selectively forget information over time as well.\\
